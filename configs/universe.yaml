@@ -1,0 +1,27 @@
+universe:
+  equities:
+    SPY: "US equities - S&P 500"
+    QQQ: "US growth/technology - Nasdaq 100"
+    EFA: "Developed markets ex-US"
+    EEM: "Emerging markets"
+
+  bonds:
+    AGG: "US aggregate bonds"
+    IEF: "US 7-10Y Treasuries"
+    TLT: "US long-term Treasuries"
+    SHY: "US short-term Treasuries / cash proxy"
+
+  alternatives:
+    GLD: "Gold"
+    DBC: "Commodities"
+    VNQ: "US real estate"
+
+settings:
+  start_date: "2006-01-01"
+  initial_capital: 100000
+  base_currency: "EUR"
+  rebalance_frequency: "monthly"
+  transaction_cost_bps: 10
+  max_asset_weight: 0.30
+  top_n_assets: 4
+  cash_ticker: "SHY"

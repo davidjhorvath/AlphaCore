@@ -1,0 +1,19 @@
+benchmarks:
+  spy:
+    description: "100% S&P 500 ETF"
+    weights:
+      SPY: 1.00
+
+  cash:
+    description: "100% short-term Treasury / cash proxy"
+    weights:
+      SHY: 1.00
+
+  balanced_60_40:
+    description: "60% SPY / 40% AGG"
+    weights:
+      SPY: 0.60
+      AGG: 0.40
+
+  equal_weight:
+    description: "Equal-weight ETF universe"
