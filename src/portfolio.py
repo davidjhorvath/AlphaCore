@@ -255,19 +255,15 @@ def build_core_satellite_portfolio_for_date(
     return weights
 
 
-def build_monthly_weights() -> pd.DataFrame:
-    config_path = PROJECT_ROOT / "configs" / "backtest_config.yaml"
-    config = load_yaml_config(config_path)
-
-    cash_ticker = config["backtest"]["cash_ticker"]
-
-    total_score = load_total_score()
-    investable = load_investable()
-    spy_trend = load_spy_trend()
-    spy_momentum_6m = load_spy_momentum_6m()
-
+def build_monthly_weights_from_signals(
+    total_score: pd.DataFrame,
+    investable: pd.DataFrame,
+    spy_trend: pd.Series,
+    spy_momentum_6m: pd.Series,
+    cash_ticker: str = "SHY",
+) -> pd.DataFrame:
+    """Build monthly portfolio weights from in-memory signal datasets."""
     all_assets = total_score.columns.tolist()
-
     weights = pd.DataFrame(0.0, index=total_score.index, columns=all_assets)
 
     for date in total_score.index:
@@ -279,6 +275,28 @@ def build_monthly_weights() -> pd.DataFrame:
             all_assets=all_assets,
             cash_ticker=cash_ticker,
         )
+
+    return weights
+
+
+def build_monthly_weights() -> pd.DataFrame:
+    config_path = PROJECT_ROOT / "configs" / "backtest_config.yaml"
+    config = load_yaml_config(config_path)
+
+    cash_ticker = config["backtest"]["cash_ticker"]
+
+    total_score = load_total_score()
+    investable = load_investable()
+    spy_trend = load_spy_trend()
+    spy_momentum_6m = load_spy_momentum_6m()
+
+    weights = build_monthly_weights_from_signals(
+        total_score=total_score,
+        investable=investable,
+        spy_trend=spy_trend,
+        spy_momentum_6m=spy_momentum_6m,
+        cash_ticker=cash_ticker,
+    )
 
     output_dir = PROJECT_ROOT / "data" / "processed" / "portfolio"
     output_dir.mkdir(parents=True, exist_ok=True)

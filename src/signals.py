@@ -39,6 +39,36 @@ def cross_sectional_rank(feature: pd.DataFrame, higher_is_better: bool = True) -
     )
 
 
+def calculate_signal_scores(
+    trend: pd.DataFrame,
+    momentum: pd.DataFrame,
+    volatility: pd.DataFrame,
+    drawdown: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    """Calculate AlphaCore scores from in-memory feature datasets."""
+    momentum_rank = cross_sectional_rank(momentum, higher_is_better=True)
+    volatility_rank = cross_sectional_rank(volatility, higher_is_better=False)
+    drawdown_rank = cross_sectional_rank(drawdown, higher_is_better=True)
+
+    total_score = (
+        0.40 * trend
+        + 0.40 * momentum_rank
+        + 0.10 * volatility_rank
+        + 0.10 * drawdown_rank
+    )
+
+    investable = (trend == 1.0) & (momentum > 0)
+    total_score = total_score.where(investable)
+
+    return {
+        "momentum_rank": momentum_rank,
+        "volatility_rank": volatility_rank,
+        "drawdown_rank": drawdown_rank,
+        "total_score": total_score,
+        "investable": investable.astype(float),
+    }
+
+
 def build_signal_scores() -> dict[str, pd.DataFrame]:
     """
     Build AlphaCore v1 signal scores.
@@ -60,34 +90,15 @@ def build_signal_scores() -> dict[str, pd.DataFrame]:
     volatility = load_feature("realized_volatility_12m")
     drawdown = load_feature("drawdown")
 
-    momentum_rank = cross_sectional_rank(momentum, higher_is_better=True)
-    volatility_rank = cross_sectional_rank(volatility, higher_is_better=False)
-    drawdown_rank = cross_sectional_rank(drawdown, higher_is_better=True)
-
-    total_score = (
-        0.40 * trend
-        + 0.40 * momentum_rank
-        + 0.10 * volatility_rank
-        + 0.10 * drawdown_rank
+    scores = calculate_signal_scores(
+        trend=trend,
+        momentum=momentum,
+        volatility=volatility,
+        drawdown=drawdown,
     )
-
-    # ETF is investable only if:
-    # 1. trend is positive
-    # 2. momentum is positive
-    investable = (trend == 1.0) & (momentum > 0)
-
-    total_score = total_score.where(investable)
 
     output_dir = PROJECT_ROOT / "data" / "processed" / "signals"
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    scores = {
-        "momentum_rank": momentum_rank,
-        "volatility_rank": volatility_rank,
-        "drawdown_rank": drawdown_rank,
-        "total_score": total_score,
-        "investable": investable.astype(float),
-    }
 
     for name, data in scores.items():
         data.to_parquet(output_dir / f"{name}.parquet")
@@ -95,6 +106,7 @@ def build_signal_scores() -> dict[str, pd.DataFrame]:
     print("Signal scores completed successfully.")
     print(f"Signal files saved to: {output_dir}")
     print("Latest total score:")
+    total_score = scores["total_score"]
     print(total_score.tail(1).T.sort_values(by=total_score.index[-1], ascending=False))
 
     return scores

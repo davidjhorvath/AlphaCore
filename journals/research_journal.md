@@ -171,3 +171,29 @@ An additional month of execution delay reduces CAGR by 0.50 percentage points an
 
 ### Decision
 AlphaCore v1.3b passes the delay test as a defensive allocator, but prompt monthly implementation matters for return capture. Do not change the production signal lag in response to this test.
+
+## Robustness Validation — Trend-Window Neighborhood
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Test whether the model depends on the exact 10-month trend-filter setting. Compare 9-, 10-, and 11-month moving-average windows while keeping the ETF universe, momentum, volatility, drawdown ranking, regime logic, portfolio construction, one-month signal lag, and 10 bps transaction cost fixed.
+
+The scenarios are calculated in memory and do not overwrite production features, signals, or weights. The reconstructed 10-month scenario was required to match the frozen production weights exactly before the report could complete.
+
+### Results
+
+| Trend window | CAGR | Volatility | Sharpe | Sortino | Max drawdown | Turnover | CAGR vs 60/40 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 9 months | 9.25% | 8.29% | 0.905 | 1.516 | -14.91% | 21.29% | +1.16 pp |
+| 10 months | 8.40% | 8.21% | 0.818 | 1.344 | -14.91% | 21.93% | +0.31 pp |
+| 11 months | 8.43% | 8.30% | 0.815 | 1.345 | -15.97% | 20.81% | +0.34 pp |
+
+The 9- and 11-month scenarios have return correlations of 0.973 and 0.988 with the 10-month baseline. Their monthly portfolio weights are exactly the same as the baseline in 93.85% and 94.67% of months, respectively.
+
+### Interpretation
+The defensive behavior and positive CAGR spread over 60/40 survive both nearby parameter changes. The 10-month result is not an isolated optimum: 11 months is nearly identical, while 9 months is historically stronger. This supports local parameter robustness but does not justify selecting 9 months after observing the result.
+
+### Decision
+Keep the frozen production trend window at 10 months. Do not optimize or broaden the parameter search in response to the superior 9-month backtest.

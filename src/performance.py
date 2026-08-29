@@ -8,19 +8,29 @@ try:
         build_benchmark_returns,
         build_signal_lag_scenarios,
         build_transaction_cost_scenarios,
+        calculate_strategy_returns,
+        calculate_turnover,
         load_monthly_returns,
         load_monthly_weights,
     )
     from src.data_loader import load_risk_free_data
+    from src.features import calculate_trend_signal, load_monthly_prices
+    from src.portfolio import build_monthly_weights_from_signals
+    from src.signals import calculate_signal_scores, load_feature
 except ModuleNotFoundError:
     from backtest import (
         build_benchmark_returns,
         build_signal_lag_scenarios,
         build_transaction_cost_scenarios,
+        calculate_strategy_returns,
+        calculate_turnover,
         load_monthly_returns,
         load_monthly_weights,
     )
     from data_loader import load_risk_free_data
+    from features import calculate_trend_signal, load_monthly_prices
+    from portfolio import build_monthly_weights_from_signals
+    from signals import calculate_signal_scores, load_feature
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -418,6 +428,131 @@ def run_signal_lag_sensitivity_report(
     summary.to_csv(output_path)
 
     print("Signal-lag sensitivity report completed successfully.")
+    print(f"Report saved to: {output_path}")
+    print()
+    print(summary.to_string())
+
+    return summary
+
+
+def run_trend_window_sensitivity_report(
+    trend_windows: tuple[int, ...] = (9, 10, 11),
+    signal_lag: int = 1,
+    cost_bps: float = 10,
+) -> pd.DataFrame:
+    """Test nearby trend windows without changing the frozen production model."""
+    if 10 not in trend_windows:
+        raise ValueError("Trend-window sensitivity requires the 10-month baseline.")
+
+    prices = load_monthly_prices()
+    returns = load_monthly_returns()
+    frozen_weights = load_monthly_weights()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+    momentum = load_feature("composite_momentum")
+    volatility = load_feature("realized_volatility_12m")
+    drawdown = load_feature("drawdown")
+    spy_momentum_6m = load_feature("momentum_6m")["SPY"]
+
+    gross_scenarios = pd.DataFrame(index=returns.index)
+    shifted_weights: dict[int, pd.DataFrame] = {}
+
+    for trend_window in trend_windows:
+        trend = calculate_trend_signal(prices, window=trend_window)
+        scores = calculate_signal_scores(
+            trend=trend,
+            momentum=momentum,
+            volatility=volatility,
+            drawdown=drawdown,
+        )
+        weights = build_monthly_weights_from_signals(
+            total_score=scores["total_score"],
+            investable=scores["investable"],
+            spy_trend=trend["SPY"],
+            spy_momentum_6m=spy_momentum_6m,
+            cash_ticker="SHY",
+        )
+
+        if trend_window == 10:
+            aligned_frozen = frozen_weights.loc[weights.index, weights.columns]
+            max_weight_difference = (weights - aligned_frozen).abs().max().max()
+            if max_weight_difference > 1e-12:
+                raise ValueError(
+                    "Reconstructed 10-month weights do not match the frozen model."
+                )
+
+        label = f"AlphaCore_net_trend_{trend_window}m"
+        gross_scenarios[label] = calculate_strategy_returns(
+            returns=returns,
+            weights=weights,
+            signal_lag=signal_lag,
+        )
+        shifted_weights[trend_window] = weights.shift(signal_lag)
+
+    common_index = gross_scenarios.dropna().index
+    scenarios = pd.DataFrame(index=common_index)
+    turnover = pd.DataFrame(index=common_index)
+
+    for trend_window in trend_windows:
+        label = f"AlphaCore_net_trend_{trend_window}m"
+        scenario_weights = shifted_weights[trend_window].loc[common_index]
+        scenario_turnover = calculate_turnover(scenario_weights)
+        scenarios[label] = (
+            gross_scenarios.loc[common_index, label]
+            - scenario_turnover * (cost_bps / 10000)
+        )
+        turnover[label] = scenario_turnover
+
+    summary = performance_summary(scenarios, risk_free_returns)
+    summary.insert(0, "trend_window_months", list(trend_windows))
+    summary.insert(1, "signal_lag_months", signal_lag)
+    summary.insert(2, "transaction_cost_bps", cost_bps)
+    summary.insert(3, "sample_start", scenarios.index.min().date().isoformat())
+    summary.insert(4, "sample_end", scenarios.index.max().date().isoformat())
+    summary["avg_monthly_turnover"] = [
+        turnover[column].mean() for column in scenarios.columns
+    ]
+
+    baseline_position = trend_windows.index(10)
+    baseline_label = scenarios.columns[baseline_position]
+    baseline_cagr = summary.iloc[baseline_position]["CAGR"]
+    baseline_weights = shifted_weights[10].loc[common_index]
+    common_benchmark_cagr = cagr(
+        build_benchmark_returns(returns)
+        .loc[common_index, "balanced_60_40"]
+    )
+    summary["CAGR_vs_10m"] = summary["CAGR"] - baseline_cagr
+    summary["CAGR_vs_balanced_60_40"] = summary["CAGR"] - common_benchmark_cagr
+    summary["correlation_vs_10m"] = [
+        scenarios[column].corr(scenarios[baseline_label])
+        for column in scenarios.columns
+    ]
+    summary["avg_weight_distance_vs_10m"] = [
+        (
+            (shifted_weights[window].loc[common_index] - baseline_weights)
+            .abs()
+            .sum(axis=1)
+            .div(2)
+            .mean()
+        )
+        for window in trend_windows
+    ]
+    summary["same_weight_month_fraction_vs_10m"] = [
+        (
+            (shifted_weights[window].loc[common_index] - baseline_weights)
+            .abs()
+            .le(1e-12)
+            .all(axis=1)
+            .mean()
+        )
+        for window in trend_windows
+    ]
+
+    output_dir = PROJECT_ROOT / "reports" / "backtests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "alphacore_v1_trend_window_sensitivity.csv"
+    summary.to_csv(output_path)
+
+    print("Trend-window sensitivity report completed successfully.")
     print(f"Report saved to: {output_path}")
     print()
     print(summary.to_string())
@@ -1299,6 +1434,9 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 100 + "\n")
     run_signal_lag_sensitivity_report()
+
+    print("\n" + "=" * 100 + "\n")
+    run_trend_window_sensitivity_report()
 
     print("\n" + "=" * 100 + "\n")
     run_subperiod_report()

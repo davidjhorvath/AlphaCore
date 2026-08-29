@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.signals import cross_sectional_rank
+from src.signals import calculate_signal_scores, cross_sectional_rank
 
 
 def test_cross_sectional_rank_higher_is_better():
@@ -107,50 +107,50 @@ def test_total_score_formula_manual_example():
         index=dates,
     )
 
-    momentum_rank = pd.DataFrame(
+    momentum = pd.DataFrame(
         {
-            "SPY": [1.0],
-            "QQQ": [0.5],
-            "SHY": [0.25],
+            "SPY": [0.30],
+            "QQQ": [0.20],
+            "SHY": [0.10],
         },
         index=dates,
     )
 
-    volatility_rank = pd.DataFrame(
+    volatility = pd.DataFrame(
         {
-            "SPY": [0.5],
-            "QQQ": [0.25],
-            "SHY": [1.0],
+            "SPY": [0.20],
+            "QQQ": [0.30],
+            "SHY": [0.10],
         },
         index=dates,
     )
 
-    drawdown_rank = pd.DataFrame(
+    drawdown = pd.DataFrame(
         {
-            "SPY": [0.5],
-            "QQQ": [0.25],
-            "SHY": [1.0],
+            "SPY": [-0.10],
+            "QQQ": [-0.20],
+            "SHY": [0.00],
         },
         index=dates,
     )
 
-    total_score = (
-        0.40 * trend
-        + 0.40 * momentum_rank
-        + 0.10 * volatility_rank
-        + 0.10 * drawdown_rank
+    scores = calculate_signal_scores(
+        trend=trend,
+        momentum=momentum,
+        volatility=volatility,
+        drawdown=drawdown,
     )
 
     expected = pd.DataFrame(
         {
-            "SPY": [0.90],
-            "QQQ": [0.65],
-            "SHY": [0.30],
+            "SPY": [0.40 + 0.40 + 0.10 * (2 / 3) + 0.10 * (2 / 3)],
+            "QQQ": [0.40 + 0.40 * (2 / 3) + 0.10 / 3 + 0.10 / 3],
+            "SHY": [float("nan")],
         },
         index=dates,
     )
 
-    pd.testing.assert_frame_equal(total_score, expected)
+    pd.testing.assert_frame_equal(scores["total_score"], expected)
 
 
 def test_investable_filter_manual_example():
