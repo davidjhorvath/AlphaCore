@@ -223,3 +223,43 @@ AlphaCore's own absolute CAGR and downside behavior are stable across start date
 
 ### Decision
 AlphaCore v1.3b passes start-date sensitivity as a defensive allocator but fails it as a robust absolute-CAGR winner over 60/40. Keep the model frozen and retain the narrower defensive positioning claim.
+
+## Robustness Validation — Initial-Capital Drawdown Accounting
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Finding and correction
+The maximum-drawdown function previously started its running peak at the first observed cumulative wealth value instead of the initial capital value of 1.0. A sample beginning with a negative month could therefore omit that initial loss from drawdown. The running peak now has a floor of 1.0, and bootstrap drawdowns use the same convention.
+
+### Impact
+The full-period AlphaCore maximum drawdown remains unchanged at -14.91%. The correction affects only samples whose early decline is deeper than their later peak-to-trough drawdown; for example, the 60/40 maximum drawdown in the 2008 start-date sample changes from -29.69% to -30.74%. The conclusions of prior validations remain unchanged.
+
+## Robustness Validation — Moving-Block Bootstrap
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Estimate uncertainty around AlphaCore and 60/40 performance using 5,000 paired circular moving-block bootstrap samples. Twelve-month blocks preserve short-run serial dependence, and AlphaCore, 60/40, and risk-free returns are resampled together. The random seed is fixed at 42 for reproducibility.
+
+### Results
+
+| Metric | Observed | Bootstrap 95% interval | Probability of positive AlphaCore spread |
+|---|---:|---:|---:|
+| AlphaCore CAGR | 8.40% | 4.67% to 12.21% | — |
+| CAGR spread vs 60/40 | +0.31 pp | -3.14 pp to +4.77 pp | 53.88% |
+| AlphaCore Sharpe | 0.818 | 0.393 to 1.273 | — |
+| Sharpe spread vs 60/40 | +0.141 | -0.274 to +0.590 | 70.92% |
+| Drawdown improvement vs 60/40 | +17.40 pp | -4.98 pp to +30.97 pp | 88.78% |
+
+The bootstrap AlphaCore maximum-drawdown interval is -25.54% to -8.59%, compared with -45.82% to -11.49% for 60/40.
+
+### Interpretation
+AlphaCore's positive full-period CAGR spread over 60/40 is statistically weak and close to a coin flip under block resampling. The Sharpe and drawdown advantages are more persistent, especially drawdown control, but their 95% relative intervals still cross zero. This supports a defensive-allocation hypothesis rather than a proven alpha claim.
+
+### Limitations
+The bootstrap reuses the same historical observations, assumes the return-generating process is sufficiently stable, and can rearrange economic regimes. It is an uncertainty analysis, not a true out-of-sample test or proof of future performance.
+
+### Decision
+AlphaCore v1.3b passes bootstrap validation only for the narrower claim of probable defensive benefit. It does not demonstrate statistically reliable CAGR or risk-adjusted outperformance over 60/40. Keep the model frozen.

@@ -240,7 +240,7 @@ def max_drawdown(returns: pd.Series) -> float:
     if wealth.empty:
         return np.nan
 
-    running_max = wealth.cummax()
+    running_max = wealth.cummax().clip(lower=1.0)
     drawdown = wealth / running_max - 1
 
     return drawdown.min()
@@ -635,6 +635,198 @@ def run_start_date_sensitivity_report(
     print(summary.to_string())
 
     return summary
+
+
+def moving_block_bootstrap_metrics(
+    strategy_returns: pd.Series,
+    benchmark_returns: pd.Series,
+    risk_free_returns: pd.Series,
+    iterations: int = 5000,
+    block_length: int = 12,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Bootstrap paired monthly returns using circular moving blocks."""
+    if iterations <= 0:
+        raise ValueError("Bootstrap iterations must be positive.")
+    if block_length <= 0:
+        raise ValueError("Bootstrap block length must be positive.")
+
+    aligned = pd.concat(
+        [
+            strategy_returns.rename("strategy"),
+            benchmark_returns.rename("benchmark"),
+            risk_free_returns.rename("risk_free"),
+        ],
+        axis=1,
+        sort=False,
+    ).dropna()
+    if aligned.empty:
+        raise ValueError("Bootstrap inputs have no common valid observations.")
+
+    observation_count = len(aligned)
+    blocks_per_sample = int(np.ceil(observation_count / block_length))
+    rng = np.random.default_rng(seed)
+    block_starts = rng.integers(
+        0,
+        observation_count,
+        size=(iterations, blocks_per_sample),
+    )
+    offsets = np.arange(block_length)
+    sample_indices = (
+        block_starts[:, :, None] + offsets[None, None, :]
+    ) % observation_count
+    sample_indices = sample_indices.reshape(iterations, -1)[:, :observation_count]
+
+    strategy_samples = aligned["strategy"].to_numpy()[sample_indices]
+    benchmark_samples = aligned["benchmark"].to_numpy()[sample_indices]
+    risk_free_samples = aligned["risk_free"].to_numpy()[sample_indices]
+
+    annualization_exponent = 12 / observation_count
+    strategy_cagr = (
+        np.prod(1 + strategy_samples, axis=1) ** annualization_exponent - 1
+    )
+    benchmark_cagr = (
+        np.prod(1 + benchmark_samples, axis=1) ** annualization_exponent - 1
+    )
+
+    strategy_excess = strategy_samples - risk_free_samples
+    benchmark_excess = benchmark_samples - risk_free_samples
+    strategy_sharpe = (
+        strategy_excess.mean(axis=1)
+        / strategy_excess.std(axis=1, ddof=1)
+        * np.sqrt(12)
+    )
+    benchmark_sharpe = (
+        benchmark_excess.mean(axis=1)
+        / benchmark_excess.std(axis=1, ddof=1)
+        * np.sqrt(12)
+    )
+
+    strategy_equity = np.cumprod(1 + strategy_samples, axis=1)
+    benchmark_equity = np.cumprod(1 + benchmark_samples, axis=1)
+    strategy_running_max = np.maximum(
+        np.maximum.accumulate(strategy_equity, axis=1),
+        1.0,
+    )
+    benchmark_running_max = np.maximum(
+        np.maximum.accumulate(benchmark_equity, axis=1),
+        1.0,
+    )
+    strategy_drawdown = (
+        strategy_equity / strategy_running_max - 1
+    ).min(axis=1)
+    benchmark_drawdown = (
+        benchmark_equity / benchmark_running_max - 1
+    ).min(axis=1)
+
+    return pd.DataFrame({
+        "AlphaCore_CAGR": strategy_cagr,
+        "balanced_60_40_CAGR": benchmark_cagr,
+        "CAGR_spread": strategy_cagr - benchmark_cagr,
+        "AlphaCore_Sharpe": strategy_sharpe,
+        "balanced_60_40_Sharpe": benchmark_sharpe,
+        "Sharpe_spread": strategy_sharpe - benchmark_sharpe,
+        "AlphaCore_max_drawdown": strategy_drawdown,
+        "balanced_60_40_max_drawdown": benchmark_drawdown,
+        "drawdown_improvement": strategy_drawdown - benchmark_drawdown,
+    })
+
+
+def summarize_bootstrap_metrics(
+    bootstrap_samples: pd.DataFrame,
+    observed_values: dict[str, float],
+) -> pd.DataFrame:
+    """Summarize bootstrap distributions with observed values and intervals."""
+    rows = []
+
+    for metric in bootstrap_samples.columns:
+        series = bootstrap_samples[metric]
+        rows.append({
+            "metric": metric,
+            "observed": observed_values[metric],
+            "bootstrap_mean": series.mean(),
+            "bootstrap_std": series.std(),
+            "p2_5": series.quantile(0.025),
+            "median": series.median(),
+            "p97_5": series.quantile(0.975),
+            "probability_positive": (
+                (series > 0).mean()
+                if metric in {
+                    "CAGR_spread",
+                    "Sharpe_spread",
+                    "drawdown_improvement",
+                }
+                else np.nan
+            ),
+        })
+
+    return pd.DataFrame(rows).set_index("metric")
+
+
+def run_block_bootstrap_report(
+    iterations: int = 5000,
+    block_length: int = 12,
+    seed: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Estimate performance uncertainty with paired moving-block bootstrap."""
+    returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+    strategy_returns = returns["AlphaCore_net"]
+    benchmark_returns = returns["balanced_60_40"]
+
+    bootstrap_samples = moving_block_bootstrap_metrics(
+        strategy_returns=strategy_returns,
+        benchmark_returns=benchmark_returns,
+        risk_free_returns=risk_free_returns,
+        iterations=iterations,
+        block_length=block_length,
+        seed=seed,
+    )
+
+    observed_strategy_cagr = cagr(strategy_returns)
+    observed_benchmark_cagr = cagr(benchmark_returns)
+    observed_strategy_sharpe = sharpe_ratio(
+        strategy_returns,
+        risk_free_returns,
+    )
+    observed_benchmark_sharpe = sharpe_ratio(
+        benchmark_returns,
+        risk_free_returns,
+    )
+    observed_strategy_drawdown = max_drawdown(strategy_returns)
+    observed_benchmark_drawdown = max_drawdown(benchmark_returns)
+    observed_values = {
+        "AlphaCore_CAGR": observed_strategy_cagr,
+        "balanced_60_40_CAGR": observed_benchmark_cagr,
+        "CAGR_spread": observed_strategy_cagr - observed_benchmark_cagr,
+        "AlphaCore_Sharpe": observed_strategy_sharpe,
+        "balanced_60_40_Sharpe": observed_benchmark_sharpe,
+        "Sharpe_spread": observed_strategy_sharpe - observed_benchmark_sharpe,
+        "AlphaCore_max_drawdown": observed_strategy_drawdown,
+        "balanced_60_40_max_drawdown": observed_benchmark_drawdown,
+        "drawdown_improvement": (
+            observed_strategy_drawdown - observed_benchmark_drawdown
+        ),
+    }
+    summary = summarize_bootstrap_metrics(bootstrap_samples, observed_values)
+    summary.insert(0, "iterations", iterations)
+    summary.insert(1, "block_length_months", block_length)
+    summary.insert(2, "seed", seed)
+
+    output_dir = PROJECT_ROOT / "reports" / "backtests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    samples_path = output_dir / "alphacore_v1_block_bootstrap_samples.csv"
+    summary_path = output_dir / "alphacore_v1_block_bootstrap_summary.csv"
+    bootstrap_samples.to_csv(samples_path, index=False)
+    summary.to_csv(summary_path)
+
+    print("Block-bootstrap report completed successfully.")
+    print(f"Samples saved to: {samples_path}")
+    print(f"Summary saved to: {summary_path}")
+    print()
+    print(summary.to_string())
+
+    return bootstrap_samples, summary
 
 def subperiod_performance_summary(
     returns: pd.DataFrame,
@@ -1517,6 +1709,9 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 100 + "\n")
     run_start_date_sensitivity_report()
+
+    print("\n" + "=" * 100 + "\n")
+    run_block_bootstrap_report()
 
     print("\n" + "=" * 100 + "\n")
     run_subperiod_report()
