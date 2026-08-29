@@ -2,11 +2,13 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pandas as pd
-import yfinance as yf
 import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+RISK_FREE_SERIES_ID = "DGS3MO"
+RISK_FREE_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "risk_free_monthly.parquet"
 
 
 def load_yaml_config(path: str | Path) -> Dict:
@@ -47,6 +49,8 @@ def download_adjusted_prices(
     """
     Download adjusted close prices from Yahoo Finance.
     """
+    import yfinance as yf
+
     data = yf.download(
         tickers=tickers,
         start=start_date,
@@ -91,6 +95,109 @@ def load_prices(path: str | Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Price file not found: {path}")
 
     return pd.read_parquet(path)
+
+
+def download_fred_series(
+    series_id: str = RISK_FREE_SERIES_ID,
+) -> pd.Series:
+    """Download a daily FRED series using FRED's lightweight CSV endpoint."""
+    return load_fred_series(f"{FRED_CSV_URL}?id={series_id}", series_id)
+
+
+def load_fred_series(
+    source: str | Path,
+    series_id: str = RISK_FREE_SERIES_ID,
+) -> pd.Series:
+    """Load a FRED CSV from a URL or local path."""
+    data = pd.read_csv(source)
+
+    date_column = "observation_date" if "observation_date" in data.columns else "DATE"
+    if date_column not in data.columns or series_id not in data.columns:
+        raise ValueError(f"Unexpected FRED response for series {series_id}.")
+
+    series = pd.Series(
+        pd.to_numeric(data[series_id], errors="coerce").to_numpy(),
+        index=pd.to_datetime(data[date_column]),
+        name=series_id,
+    )
+    return series.sort_index()
+
+
+def annual_yield_percent_to_monthly_return(
+    annual_yield_percent: pd.Series | float,
+) -> pd.Series | float:
+    """
+    Convert a quoted Treasury CMT yield percentage to a monthly return proxy.
+
+    Treasury CMT yields are quoted on an investment basis. Converting the
+    decimal yield I to APY as (1 + I / 2) ** 2 - 1 implies the equivalent
+    monthly proxy (1 + I / 2) ** (1 / 6) - 1. This is a yield-derived proxy,
+    not a realized Treasury bill total-return series.
+    """
+    decimal_yield = annual_yield_percent / 100
+    return (1 + decimal_yield / 2) ** (1 / 6) - 1
+
+
+def align_risk_free_to_monthly(daily_yields: pd.Series) -> pd.DataFrame:
+    """
+    Build month-end risk-free returns without look-ahead.
+
+    Each month's return uses the final available DGS3MO observation from the
+    preceding calendar month. The observation is therefore shifted to the next
+    month-end before converting the annualized percentage yield.
+    """
+    yields = daily_yields.copy()
+    yields.index = pd.to_datetime(yields.index)
+    yields = pd.to_numeric(yields, errors="coerce").sort_index()
+
+    monthly_yields = yields.groupby(yields.index.to_period("M")).last().dropna()
+    monthly_yields.index = monthly_yields.index.to_timestamp("M") + pd.offsets.MonthEnd(1)
+
+    monthly_returns = annual_yield_percent_to_monthly_return(monthly_yields)
+    monthly_returns.name = "risk_free_return"
+    monthly_returns.index.name = "Date"
+    return monthly_returns.to_frame()
+
+
+def save_risk_free_data(
+    risk_free_returns: pd.DataFrame,
+    output_path: str | Path = RISK_FREE_DATA_PATH,
+) -> None:
+    """Save processed monthly risk-free returns to parquet."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    risk_free_returns.to_parquet(output_path)
+
+
+def load_risk_free_data(
+    path: str | Path = RISK_FREE_DATA_PATH,
+) -> pd.DataFrame:
+    """Load processed monthly risk-free returns from parquet."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            "Risk-free data not found. Run build_risk_free_dataset() first."
+        )
+
+    data = pd.read_parquet(path)
+    if "risk_free_return" not in data.columns:
+        raise ValueError("Risk-free data must contain a risk_free_return column.")
+    data.index = pd.to_datetime(data.index)
+    return data.sort_index()
+
+
+def build_risk_free_dataset() -> pd.DataFrame:
+    """Download DGS3MO, create lagged monthly returns, and save the dataset."""
+    daily_yields = download_fred_series(RISK_FREE_SERIES_ID)
+    monthly_returns = align_risk_free_to_monthly(daily_yields)
+    current_month_end = pd.Timestamp.today().normalize() + pd.offsets.MonthEnd(0)
+    monthly_returns = monthly_returns.loc[:current_month_end]
+    save_risk_free_data(monthly_returns)
+
+    print("Risk-free data pipeline completed successfully.")
+    print(f"Monthly risk-free returns shape: {monthly_returns.shape}")
+    print(f"Saved to: {RISK_FREE_DATA_PATH}")
+    return monthly_returns
 
 
 def resample_to_monthly(prices: pd.DataFrame) -> pd.DataFrame:
@@ -149,3 +256,4 @@ def build_price_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 if __name__ == "__main__":
     build_price_dataset()
+    build_risk_free_dataset()

@@ -3,8 +3,106 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+try:
+    from src.data_loader import load_risk_free_data
+except ModuleNotFoundError:
+    from data_loader import load_risk_free_data
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _monthly_excess_returns(
+    returns: pd.Series,
+    risk_free_rate: float | pd.Series,
+    periods_per_year: int,
+) -> pd.Series:
+    """Align returns with monthly risk-free returns and calculate excess returns."""
+    if isinstance(risk_free_rate, pd.Series):
+        aligned = pd.concat(
+            [returns.rename("return"), risk_free_rate.rename("risk_free_return")],
+            axis=1,
+            sort=False,
+        ).dropna()
+        return aligned["return"] - aligned["risk_free_return"]
+
+    return returns.dropna() - (risk_free_rate / periods_per_year)
+
+
+def _calendar_monthly_excess_returns(
+    returns: pd.Series,
+    risk_free_rate: float | pd.Series,
+    periods_per_year: int,
+) -> pd.Series:
+    """Calculate excess returns on a complete month-end calendar without filling."""
+    returns = returns.copy()
+    returns.index = pd.to_datetime(returns.index)
+
+    if returns.empty:
+        return returns
+
+    monthly_index = pd.period_range(
+        returns.index.min().to_period("M"),
+        returns.index.max().to_period("M"),
+        freq="M",
+    ).to_timestamp("M")
+    calendar_returns = returns.reindex(monthly_index)
+
+    if isinstance(risk_free_rate, pd.Series):
+        risk_free_returns = risk_free_rate.copy()
+        risk_free_returns.index = pd.to_datetime(risk_free_returns.index)
+        return calendar_returns - risk_free_returns.reindex(monthly_index)
+
+    return calendar_returns - (risk_free_rate / periods_per_year)
+
+
+def _aligned_capm_excess_returns(
+    strategy_returns: pd.Series,
+    benchmark_returns: pd.Series,
+    risk_free_rate: float | pd.Series,
+    periods_per_year: int,
+) -> pd.DataFrame:
+    """Align CAPM inputs and return strategy and benchmark excess returns."""
+    series = [
+        strategy_returns.rename("strategy"),
+        benchmark_returns.rename("benchmark"),
+    ]
+    if isinstance(risk_free_rate, pd.Series):
+        series.append(risk_free_rate.rename("risk_free"))
+
+    data = pd.concat(series, axis=1, sort=False).dropna()
+    if data.empty:
+        return pd.DataFrame(columns=["strategy_excess", "benchmark_excess"])
+
+    if isinstance(risk_free_rate, pd.Series):
+        monthly_risk_free = data["risk_free"]
+    else:
+        monthly_risk_free = risk_free_rate / periods_per_year
+
+    return pd.DataFrame(
+        {
+            "strategy_excess": data["strategy"] - monthly_risk_free,
+            "benchmark_excess": data["benchmark"] - monthly_risk_free,
+        },
+        index=data.index,
+    )
+
+
+def _beta_from_excess_returns(excess_returns: pd.DataFrame) -> float:
+    """Estimate CAPM beta from aligned strategy and benchmark excess returns."""
+    if excess_returns.empty:
+        return np.nan
+
+    benchmark_variance = excess_returns["benchmark_excess"].var()
+    if benchmark_variance == 0 or np.isnan(benchmark_variance):
+        return np.nan
+
+    return (
+        excess_returns["strategy_excess"].cov(
+            excess_returns["benchmark_excess"]
+        )
+        / benchmark_variance
+    )
 
 
 def load_backtest_returns() -> pd.DataFrame:
@@ -61,22 +159,23 @@ def annualized_volatility(returns: pd.Series, periods_per_year: int = 12) -> flo
 
 def sharpe_ratio(
     returns: pd.Series,
-    risk_free_rate: float = 0.0,
+    risk_free_rate: float | pd.Series = 0.0,
     periods_per_year: int = 12,
 ) -> float:
     """
     Annualized Sharpe ratio.
 
-    For v1 we use risk_free_rate = 0 to keep the first version simple.
-    Later we can replace this with T-bill/FRED data.
+    A scalar risk-free rate is interpreted as an annual rate for backward
+    compatibility. A Series must contain monthly decimal returns.
     """
-    returns = returns.dropna()
+    excess_returns = _monthly_excess_returns(
+        returns, risk_free_rate, periods_per_year
+    )
 
-    if returns.empty:
+    if excess_returns.empty:
         return np.nan
 
-    excess_returns = returns - (risk_free_rate / periods_per_year)
-    vol = returns.std()
+    vol = excess_returns.std()
 
     if vol == 0:
         return np.nan
@@ -86,21 +185,21 @@ def sharpe_ratio(
 
 def sortino_ratio(
     returns: pd.Series,
-    risk_free_rate: float = 0.0,
+    risk_free_rate: float | pd.Series = 0.0,
     periods_per_year: int = 12,
 ) -> float:
     """
     Annualized Sortino ratio.
     """
-    returns = returns.dropna()
+    excess_returns = _monthly_excess_returns(
+        returns, risk_free_rate, periods_per_year
+    )
 
-    if returns.empty:
+    if excess_returns.empty:
         return np.nan
 
-    excess_returns = returns - (risk_free_rate / periods_per_year)
-    downside_returns = excess_returns[excess_returns < 0]
-
-    downside_deviation = downside_returns.std()
+    shortfall = np.minimum(excess_returns, 0.0)
+    downside_deviation = np.sqrt(np.mean(shortfall ** 2))
 
     if downside_deviation == 0 or np.isnan(downside_deviation):
         return np.nan
@@ -160,7 +259,10 @@ def cumulative_total_return(returns: pd.Series) -> float:
     return (1 + returns).prod() - 1
 
 
-def performance_summary(returns: pd.DataFrame) -> pd.DataFrame:
+def performance_summary(
+    returns: pd.DataFrame,
+    risk_free_returns: pd.Series | None = None,
+) -> pd.DataFrame:
     """
     Create performance summary for all return columns.
     """
@@ -177,11 +279,22 @@ def performance_summary(returns: pd.DataFrame) -> pd.DataFrame:
         rows.append({
             "strategy": col,
             "months": len(series),
+            "risk_adjusted_months": len(
+                _monthly_excess_returns(
+                    series,
+                    risk_free_returns if risk_free_returns is not None else 0.0,
+                    12,
+                )
+            ),
             "cumulative_return": cumulative_total_return(series),
             "CAGR": cagr(series),
             "annualized_volatility": annualized_volatility(series),
-            "Sharpe": sharpe_ratio(series),
-            "Sortino": sortino_ratio(series),
+            "Sharpe": sharpe_ratio(
+                series, risk_free_returns if risk_free_returns is not None else 0.0
+            ),
+            "Sortino": sortino_ratio(
+                series, risk_free_returns if risk_free_returns is not None else 0.0
+            ),
             "max_drawdown": max_drawdown(series),
             "Calmar": calmar_ratio(series),
             "hit_rate": hit_rate(series),
@@ -197,7 +310,8 @@ def run_performance_report() -> pd.DataFrame:
     Run AlphaCore v1 performance report.
     """
     returns = load_backtest_returns()
-    summary = performance_summary(returns)
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+    summary = performance_summary(returns, risk_free_returns)
 
     if "turnover" in returns.columns:
         avg_turnover = returns["turnover"].dropna().mean()
@@ -218,6 +332,7 @@ def run_performance_report() -> pd.DataFrame:
 def subperiod_performance_summary(
     returns: pd.DataFrame,
     periods: dict[str, tuple[str, str]],
+    risk_free_returns: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Calculate performance metrics for selected subperiods.
@@ -245,11 +360,22 @@ def subperiod_performance_summary(
                 "period": period_name,
                 "strategy": col,
                 "months": len(series),
+                "risk_adjusted_months": len(
+                    _monthly_excess_returns(
+                        series,
+                        risk_free_returns if risk_free_returns is not None else 0.0,
+                        12,
+                    )
+                ),
                 "cumulative_return": cumulative_total_return(series),
                 "CAGR": cagr(series),
                 "annualized_volatility": annualized_volatility(series),
-                "Sharpe": sharpe_ratio(series),
-                "Sortino": sortino_ratio(series),
+                "Sharpe": sharpe_ratio(
+                    series, risk_free_returns if risk_free_returns is not None else 0.0
+                ),
+                "Sortino": sortino_ratio(
+                    series, risk_free_returns if risk_free_returns is not None else 0.0
+                ),
                 "max_drawdown": max_drawdown(series),
                 "Calmar": calmar_ratio(series),
                 "hit_rate": hit_rate(series),
@@ -265,6 +391,7 @@ def run_subperiod_report() -> pd.DataFrame:
     Run subperiod performance report for AlphaCore v1.2.
     """
     returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
 
     periods = {
         "2006-2010": ("2006-01-01", "2010-12-31"),
@@ -276,6 +403,7 @@ def run_subperiod_report() -> pd.DataFrame:
     summary = subperiod_performance_summary(
         returns=returns,
         periods=periods,
+        risk_free_returns=risk_free_returns,
     )
 
     output_dir = PROJECT_ROOT / "reports" / "backtests"
@@ -468,49 +596,49 @@ def run_best_months_report() -> pd.DataFrame:
 def beta_vs_benchmark(
     strategy_returns: pd.Series,
     benchmark_returns: pd.Series,
+    periods_per_year: int = 12,
+    risk_free_rate: float | pd.Series = 0.0,
 ) -> float:
     """
-    Calculate beta of strategy vs benchmark.
+    Calculate CAPM beta from aligned strategy and benchmark excess returns.
     """
-    data = pd.concat([strategy_returns, benchmark_returns], axis=1).dropna()
-
-    if data.empty:
-        return np.nan
-
-    strategy = data.iloc[:, 0]
-    benchmark = data.iloc[:, 1]
-
-    benchmark_variance = benchmark.var()
-
-    if benchmark_variance == 0:
-        return np.nan
-
-    covariance = strategy.cov(benchmark)
-
-    return covariance / benchmark_variance
+    excess_returns = _aligned_capm_excess_returns(
+        strategy_returns,
+        benchmark_returns,
+        risk_free_rate,
+        periods_per_year,
+    )
+    return _beta_from_excess_returns(excess_returns)
 
 
 def alpha_vs_benchmark(
     strategy_returns: pd.Series,
     benchmark_returns: pd.Series,
     periods_per_year: int = 12,
+    risk_free_rate: float | pd.Series = 0.0,
 ) -> float:
     """
-    Calculate annualized alpha vs benchmark using:
-    alpha = strategy annualized return - beta * benchmark annualized return
+    Calculate annualized CAPM-style alpha from monthly excess returns.
 
-    For v1 we keep risk-free rate at 0.
-    Later this should be upgraded with T-bill data.
+    Beta is estimated from strategy and benchmark excess returns. Alpha is the
+    arithmetic annualization of the mean monthly CAPM residual:
+    (strategy - risk-free) - beta * (benchmark - risk-free).
     """
-    beta = beta_vs_benchmark(strategy_returns, benchmark_returns)
-
+    excess_returns = _aligned_capm_excess_returns(
+        strategy_returns,
+        benchmark_returns,
+        risk_free_rate,
+        periods_per_year,
+    )
+    beta = _beta_from_excess_returns(excess_returns)
     if np.isnan(beta):
         return np.nan
 
-    strategy_cagr = cagr(strategy_returns, periods_per_year)
-    benchmark_cagr = cagr(benchmark_returns, periods_per_year)
-
-    return strategy_cagr - beta * benchmark_cagr
+    monthly_alpha = (
+        excess_returns["strategy_excess"]
+        - beta * excess_returns["benchmark_excess"]
+    ).mean()
+    return monthly_alpha * periods_per_year
 
 
 def correlation_vs_benchmark(
@@ -717,6 +845,7 @@ def relative_metrics_summary(
     returns: pd.DataFrame,
     strategy_columns: list[str] | None = None,
     benchmark: str = "SPY",
+    risk_free_returns: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Calculate benchmark-relative metrics for selected strategies.
@@ -748,8 +877,20 @@ def relative_metrics_summary(
         row = {
             "strategy": strategy,
             "benchmark": benchmark,
-            "beta": beta_vs_benchmark(strategy_returns, benchmark_returns),
-            "alpha_annualized": alpha_vs_benchmark(strategy_returns, benchmark_returns),
+            "beta": beta_vs_benchmark(
+                strategy_returns,
+                benchmark_returns,
+                risk_free_rate=(
+                    risk_free_returns if risk_free_returns is not None else 0.0
+                ),
+            ),
+            "alpha_annualized": alpha_vs_benchmark(
+                strategy_returns,
+                benchmark_returns,
+                risk_free_rate=(
+                    risk_free_returns if risk_free_returns is not None else 0.0
+                ),
+            ),
             "correlation": correlation_vs_benchmark(strategy_returns, benchmark_returns),
             "tracking_error": tracking_error(strategy_returns, benchmark_returns),
             "information_ratio": information_ratio(strategy_returns, benchmark_returns),
@@ -788,12 +929,15 @@ def run_relative_metrics_report(
     """
 
     returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
 
     summary = relative_metrics_summary(
 
         returns=returns,
 
         benchmark=benchmark,
+
+        risk_free_returns=risk_free_returns,
 
     )
 
@@ -857,17 +1001,27 @@ def rolling_sharpe(
     returns: pd.Series,
     window: int = 36,
     periods_per_year: int = 12,
+    risk_free_rate: float | pd.Series = 0.0,
 ) -> pd.Series:
     """
-    Calculate rolling annualized Sharpe ratio.
-    Risk-free rate is assumed to be zero for v1.
+    Calculate rolling Sharpe using consecutive month-end excess returns.
+
+    Missing calendar months or missing return/risk-free values remain NaN, so
+    every result requires a complete window of consecutive monthly observations.
     """
-    rolling_mean = returns.rolling(window=window).mean()
-    rolling_std = returns.rolling(window=window).std()
+    excess_returns = _calendar_monthly_excess_returns(
+        returns, risk_free_rate, periods_per_year
+    )
+    rolling_mean = excess_returns.rolling(
+        window=window, min_periods=window
+    ).mean()
+    rolling_std = excess_returns.rolling(
+        window=window, min_periods=window
+    ).std()
 
     sharpe = rolling_mean / rolling_std * np.sqrt(periods_per_year)
 
-    return sharpe
+    return sharpe.reindex(returns.index)
 
 
 def rolling_max_drawdown(
@@ -913,6 +1067,7 @@ def rolling_metrics_report(
     strategy: str = "AlphaCore_net",
     benchmark: str = "SPY",
     window: int = 36,
+    risk_free_returns: pd.Series | None = None,
 ) -> pd.DataFrame:
     """
     Build rolling metrics report for AlphaCore.
@@ -935,6 +1090,9 @@ def rolling_metrics_report(
     report[f"{strategy}_rolling_Sharpe"] = rolling_sharpe(
         strategy_returns,
         window=window,
+        risk_free_rate=(
+            risk_free_returns if risk_free_returns is not None else 0.0
+        ),
     )
 
     report[f"{strategy}_rolling_max_drawdown"] = rolling_max_drawdown(
@@ -961,6 +1119,9 @@ def rolling_metrics_report(
     report[f"{benchmark}_rolling_Sharpe"] = rolling_sharpe(
         benchmark_returns,
         window=window,
+        risk_free_rate=(
+            risk_free_returns if risk_free_returns is not None else 0.0
+        ),
     )
 
     report[f"{benchmark}_rolling_max_drawdown"] = rolling_max_drawdown(
@@ -1006,12 +1167,14 @@ def run_rolling_metrics_report() -> tuple[pd.DataFrame, pd.DataFrame]:
     Run rolling 36-month metrics report.
     """
     returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
 
     rolling_report = rolling_metrics_report(
         returns=returns,
         strategy="AlphaCore_net",
         benchmark="SPY",
         window=36,
+        risk_free_returns=risk_free_returns,
     )
 
     rolling_summary = summarize_rolling_metrics(rolling_report)
