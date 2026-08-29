@@ -151,6 +151,22 @@ def test_calculate_turnover_known_example():
     )
 
 
+def test_calculate_turnover_charges_first_allocation_after_leading_nan():
+    dates = pd.date_range("2020-01-31", periods=3, freq="ME")
+    weights = pd.DataFrame(
+        {
+            "SPY": [float("nan"), 0.60, 0.50],
+            "SHY": [float("nan"), 0.40, 0.50],
+        },
+        index=dates,
+    )
+
+    turnover = calculate_turnover(weights)
+
+    expected = pd.Series([float("nan"), 0.50, 0.10], index=dates)
+    pd.testing.assert_series_equal(turnover, expected, check_names=False)
+
+
 def test_transaction_cost_scenarios_apply_exact_bps_to_same_turnover():
     dates = pd.date_range("2020-01-31", periods=2, freq="ME")
     gross_returns = pd.Series([0.02, 0.01], index=dates)

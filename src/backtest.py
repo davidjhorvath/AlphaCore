@@ -56,8 +56,14 @@ def calculate_turnover(weights: pd.DataFrame) -> pd.Series:
     We divide by 2 because buying one asset and selling another creates
     two-sided weight changes for one portfolio rebalance.
     """
-    turnover = weights.diff().abs().sum(axis=1) / 2
-    turnover.iloc[0] = weights.iloc[0].abs().sum() / 2
+    turnover = weights.diff().abs().sum(axis=1, min_count=1) / 2
+
+    valid_rows = weights.notna().any(axis=1)
+    if valid_rows.any():
+        first_valid_date = valid_rows[valid_rows].index[0]
+        turnover.loc[first_valid_date] = (
+            weights.loc[first_valid_date].abs().sum() / 2
+        )
 
     return turnover
 

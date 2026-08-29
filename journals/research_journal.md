@@ -92,14 +92,14 @@ Require at least one valid asset contribution when summing portfolio returns. Th
 ### Impact on AlphaCore v1.3b net results
 - Valid observations: 245 to 244
 - First valid month: 2006-02-28, matching the benchmarks
-- Cumulative return: unchanged at 416.17%
-- CAGR: 8.37% to 8.41%
+- Cumulative return after the subsequent initial-allocation cost correction: 415.91%
+- CAGR: 8.37% to 8.40%
 - Annualized volatility: 8.20% to 8.21%
-- Sharpe ratio: 0.815 to 0.819
-- Sortino ratio: 1.339 to 1.345
+- Sharpe ratio: 0.815 to 0.818
+- Sortino ratio: 1.339 to 1.344
 - Maximum drawdown: unchanged at -14.91%
-- Average monthly turnover: unchanged at 21.63%
-- Test status: 31 passed
+- Average monthly turnover after the subsequent initial-allocation correction: 21.93%
+- Test status after the subsequent correction: 33 passed
 
 ### Decision
 The correction improves sample consistency without changing the ETF universe, signals, regime rules, or portfolio construction. AlphaCore v1.3b remains the frozen working model. The next small robustness test should be transaction-cost sensitivity.
@@ -121,14 +121,28 @@ Test whether the fixed v1.3b portfolio remains economically viable under transac
 
 | Cost | CAGR | Sharpe | Sortino | Max drawdown | CAGR vs 60/40 |
 |---:|---:|---:|---:|---:|---:|
-| 10 bps | 8.41% | 0.819 | 1.345 | -14.91% | +0.31 pp |
-| 25 bps | 7.99% | 0.771 | 1.254 | -15.25% | -0.11 pp |
-| 50 bps | 7.29% | 0.691 | 1.106 | -15.81% | -0.80 pp |
+| 10 bps | 8.40% | 0.818 | 1.344 | -14.91% | +0.31 pp |
+| 25 bps | 7.98% | 0.770 | 1.253 | -15.25% | -0.11 pp |
+| 50 bps | 7.27% | 0.689 | 1.103 | -15.81% | -0.82 pp |
 
-Average monthly turnover remains 21.63% in every scenario because portfolio decisions are held fixed.
+Average monthly turnover remains 21.93% in every scenario because portfolio decisions are held fixed.
 
 ### Interpretation
 Risk-adjusted performance and drawdown control degrade gradually rather than collapsing. Even at 50 bps, AlphaCore retains a slightly higher Sharpe ratio and substantially lower maximum drawdown than the 60/40 benchmark. However, the baseline CAGR advantage over 60/40 is small and disappears by 25 bps. The claim that v1.3b beats 60/40 on absolute CAGR is therefore implementation-cost sensitive.
 
 ### Decision
 AlphaCore v1.3b passes the transaction-cost test as a defensive risk-managed allocator, but not as a robust absolute-return winner over 60/40. Keep the model frozen and do not optimize turnover in response to this result.
+
+## Robustness Validation — Initial Allocation Cost Accounting
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Finding
+After applying the one-month signal lag, the turnover series starts with a missing row. The previous turnover calculation only charged initial allocation when valid weights appeared in the first physical row, so it missed the first actual portfolio establishment in February 2006.
+
+### Correction and impact
+The first valid 100% allocation now receives turnover of 50% under the model's existing two-sided turnover convention. Leading missing rows remain missing. This changes the baseline cumulative return from 416.17% to 415.91%, CAGR from 8.4065% to 8.4038%, and average monthly turnover from 21.63% to 21.93%. Maximum drawdown remains unchanged at -14.91%.
+
+### Decision
+This is an accounting correction, not a model change. The economic conclusions of the sample-alignment and transaction-cost validations remain unchanged.
