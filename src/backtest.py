@@ -77,7 +77,10 @@ def calculate_strategy_returns(
 
     shifted_weights = weights.shift(signal_lag)
 
-    strategy_returns = (shifted_weights * aligned_returns).sum(axis=1)
+    strategy_returns = (shifted_weights * aligned_returns).sum(
+        axis=1,
+        min_count=1,
+    )
 
     return strategy_returns
 
@@ -103,6 +106,24 @@ def apply_transaction_costs(
     net_returns = strategy_returns - costs
 
     return net_returns, turnover
+
+
+def build_transaction_cost_scenarios(
+    strategy_returns: pd.Series,
+    turnover: pd.Series,
+    cost_bps_levels: tuple[float, ...] | list[float],
+) -> pd.DataFrame:
+    """Apply several transaction-cost assumptions to the same gross returns."""
+    if any(cost_bps < 0 for cost_bps in cost_bps_levels):
+        raise ValueError("Transaction-cost assumptions cannot be negative.")
+
+    scenarios = pd.DataFrame(index=strategy_returns.index)
+
+    for cost_bps in cost_bps_levels:
+        label = f"AlphaCore_net_{cost_bps:g}bps"
+        scenarios[label] = strategy_returns - turnover * (cost_bps / 10000)
+
+    return scenarios
 
 
 def build_benchmark_returns(returns: pd.DataFrame) -> pd.DataFrame:

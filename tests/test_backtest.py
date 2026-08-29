@@ -1,6 +1,10 @@
 import pandas as pd
 
-from src.backtest import calculate_strategy_returns, calculate_turnover
+from src.backtest import (
+    build_transaction_cost_scenarios,
+    calculate_strategy_returns,
+    calculate_turnover,
+)
 
 
 def test_calculate_strategy_returns_uses_prior_period_weights():
@@ -36,7 +40,7 @@ def test_calculate_strategy_returns_uses_prior_period_weights():
 
     expected = pd.Series(
         [
-            0.00,  # first month has no previous weights
+            float("nan"),  # first month has no previous weights
             0.20,  # uses Jan weights: 100% SPY applied to Feb returns
             0.01,  # uses Feb weights: 100% SHY applied to Mar returns
         ],
@@ -48,6 +52,33 @@ def test_calculate_strategy_returns_uses_prior_period_weights():
         expected,
         check_names=False,
     )
+
+
+def test_first_valid_strategy_return_matches_benchmark_sample_start():
+    """The signal-lag warm-up month must not become an artificial zero return."""
+    dates = pd.date_range("2020-01-31", periods=3, freq="ME")
+    returns = pd.DataFrame(
+        {
+            "SPY": [float("nan"), 0.20, 0.30],
+            "SHY": [float("nan"), 0.01, 0.01],
+        },
+        index=dates,
+    )
+    weights = pd.DataFrame(
+        {
+            "SPY": [1.0, 0.0, 0.0],
+            "SHY": [0.0, 1.0, 1.0],
+        },
+        index=dates,
+    )
+
+    strategy_returns = calculate_strategy_returns(
+        returns=returns,
+        weights=weights,
+        signal_lag=1,
+    )
+
+    assert strategy_returns.first_valid_index() == returns["SPY"].first_valid_index()
 
 
 def test_calculate_strategy_returns_signal_lag_zero_uses_same_period_weights():
@@ -118,3 +149,28 @@ def test_calculate_turnover_known_example():
         expected,
         check_names=False,
     )
+
+
+def test_transaction_cost_scenarios_apply_exact_bps_to_same_turnover():
+    dates = pd.date_range("2020-01-31", periods=2, freq="ME")
+    gross_returns = pd.Series([0.02, 0.01], index=dates)
+    turnover = pd.Series([0.50, 1.00], index=dates)
+
+    result = build_transaction_cost_scenarios(
+        strategy_returns=gross_returns,
+        turnover=turnover,
+        cost_bps_levels=(10, 25, 50),
+    )
+
+    expected = pd.DataFrame(
+        {
+            "AlphaCore_net_10bps": [0.0195, 0.0090],
+            "AlphaCore_net_25bps": [0.01875, 0.0075],
+            "AlphaCore_net_50bps": [0.0175, 0.0050],
+        },
+        index=dates,
+    )
+
+    pd.testing.assert_frame_equal(result, expected)
+    assert (result["AlphaCore_net_10bps"] >= result["AlphaCore_net_25bps"]).all()
+    assert (result["AlphaCore_net_25bps"] >= result["AlphaCore_net_50bps"]).all()

@@ -4,8 +4,10 @@ import numpy as np
 import pandas as pd
 
 try:
+    from src.backtest import build_transaction_cost_scenarios
     from src.data_loader import load_risk_free_data
 except ModuleNotFoundError:
+    from backtest import build_transaction_cost_scenarios
     from data_loader import load_risk_free_data
 
 
@@ -326,6 +328,38 @@ def run_performance_report() -> pd.DataFrame:
     print(f"Report saved to: {output_dir / 'alphacore_v1_performance_summary.csv'}")
     print()
     print(summary.sort_values(by="Sharpe", ascending=False))
+
+    return summary
+
+
+def run_transaction_cost_sensitivity_report(
+    cost_bps_levels: tuple[float, ...] = (10, 25, 50),
+) -> pd.DataFrame:
+    """Stress test fixed AlphaCore returns under higher trading costs."""
+    returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+
+    scenarios = build_transaction_cost_scenarios(
+        strategy_returns=returns["AlphaCore_gross"],
+        turnover=returns["turnover"],
+        cost_bps_levels=cost_bps_levels,
+    )
+    summary = performance_summary(scenarios, risk_free_returns)
+    summary.insert(0, "transaction_cost_bps", list(cost_bps_levels))
+    summary["CAGR_vs_balanced_60_40"] = (
+        summary["CAGR"] - cagr(returns["balanced_60_40"])
+    )
+    summary["avg_monthly_turnover"] = returns["turnover"].dropna().mean()
+
+    output_dir = PROJECT_ROOT / "reports" / "backtests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "alphacore_v1_transaction_cost_sensitivity.csv"
+    summary.to_csv(output_path)
+
+    print("Transaction-cost sensitivity report completed successfully.")
+    print(f"Report saved to: {output_path}")
+    print()
+    print(summary.to_string())
 
     return summary
 
@@ -1198,6 +1232,9 @@ def run_rolling_metrics_report() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 if __name__ == "__main__":
     run_performance_report()
+
+    print("\n" + "=" * 100 + "\n")
+    run_transaction_cost_sensitivity_report()
 
     print("\n" + "=" * 100 + "\n")
     run_subperiod_report()

@@ -74,3 +74,61 @@ AlphaCore v1.3 is not yet a high-return alpha engine. Its current edge is downsi
 
 ### Decision
 Freeze AlphaCore v1.3 as the current working model. Do not change allocation rules until risk-free adjusted metrics and benchmark-relative analysis versus 60/40 are completed.
+
+## Robustness Validation — Signal-Lag Sample Alignment
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Verify that the one-month signal lag does not introduce an artificial return in the warm-up month and that AlphaCore is compared with its benchmarks over the same sample.
+
+### Finding
+The first month had no prior-period weights, but the row-wise return calculation converted the all-missing product into a 0.00% strategy return. AlphaCore therefore had 245 reported observations while the benchmarks had 244.
+
+### Correction
+Require at least one valid asset contribution when summing portfolio returns. The warm-up month now remains missing, as intended. A regression test also verifies that the first valid AlphaCore return matches the benchmark sample start.
+
+### Impact on AlphaCore v1.3b net results
+- Valid observations: 245 to 244
+- First valid month: 2006-02-28, matching the benchmarks
+- Cumulative return: unchanged at 416.17%
+- CAGR: 8.37% to 8.41%
+- Annualized volatility: 8.20% to 8.21%
+- Sharpe ratio: 0.815 to 0.819
+- Sortino ratio: 1.339 to 1.345
+- Maximum drawdown: unchanged at -14.91%
+- Average monthly turnover: unchanged at 21.63%
+- Test status: 31 passed
+
+### Decision
+The correction improves sample consistency without changing the ETF universe, signals, regime rules, or portfolio construction. AlphaCore v1.3b remains the frozen working model. The next small robustness test should be transaction-cost sensitivity.
+
+## Robustness Validation — Transaction-Cost Sensitivity
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Test whether the fixed v1.3b portfolio remains economically viable under transaction-cost assumptions above the 10 bps baseline, without changing signals, weights, or turnover.
+
+### Scenarios
+- 10 bps: current baseline
+- 25 bps: moderate implementation stress
+- 50 bps: severe implementation stress
+
+### Results
+
+| Cost | CAGR | Sharpe | Sortino | Max drawdown | CAGR vs 60/40 |
+|---:|---:|---:|---:|---:|---:|
+| 10 bps | 8.41% | 0.819 | 1.345 | -14.91% | +0.31 pp |
+| 25 bps | 7.99% | 0.771 | 1.254 | -15.25% | -0.11 pp |
+| 50 bps | 7.29% | 0.691 | 1.106 | -15.81% | -0.80 pp |
+
+Average monthly turnover remains 21.63% in every scenario because portfolio decisions are held fixed.
+
+### Interpretation
+Risk-adjusted performance and drawdown control degrade gradually rather than collapsing. Even at 50 bps, AlphaCore retains a slightly higher Sharpe ratio and substantially lower maximum drawdown than the 60/40 benchmark. However, the baseline CAGR advantage over 60/40 is small and disappears by 25 bps. The claim that v1.3b beats 60/40 on absolute CAGR is therefore implementation-cost sensitive.
+
+### Decision
+AlphaCore v1.3b passes the transaction-cost test as a defensive risk-managed allocator, but not as a robust absolute-return winner over 60/40. Keep the model frozen and do not optimize turnover in response to this result.
