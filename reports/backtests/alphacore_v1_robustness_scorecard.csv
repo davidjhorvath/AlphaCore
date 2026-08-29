@@ -1,0 +1,13 @@
+validation,status,evidence,decision
+Backtest sample alignment,PASS,"AlphaCore and benchmarks use 244 common valid months from 2006-02-28; warm-up return remains missing",Use aligned sample
+Initial allocation cost accounting,PASS,"First valid 100% allocation receives 50% turnover under the existing two-sided convention",Use corrected net returns
+Transaction-cost sensitivity,CONDITIONAL,"Defensive metrics degrade gradually through 50 bps; CAGR advantage over 60/40 disappears by 25 bps",Do not claim cost-robust absolute outperformance
+Execution-delay sensitivity,CONDITIONAL,"Two-month lag lowers CAGR by 0.50 pp and Sharpe from 0.822 to 0.688; drawdown remains controlled",Prompt monthly implementation matters
+Trend-window neighborhood,PASS,"9/10/11-month windows retain defensive behavior and positive CAGR spread over 60/40; 10-month weights reproduce exactly",Keep frozen 10-month setting
+Start-date sensitivity,CONDITIONAL,"AlphaCore drawdown is better in 11/11 samples and Sharpe in 8/11; CAGR beats 60/40 in only 3/11",Support defensive claim only
+Moving-block bootstrap,CONDITIONAL,"Probability of positive spread: CAGR 53.88%; Sharpe 70.92%; drawdown improvement 88.78%; all relative 95% intervals cross zero",Evidence is suggestive rather than statistically conclusive
+Absolute CAGR outperformance vs 60/40,FAIL,"Advantage disappears under moderate costs, extra delay, most later start dates, and bootstrap uncertainty",Do not market or describe v1.3b as a proven alpha engine
+Defensive allocation behavior,PASS,"Lower observed drawdown, stable own CAGR across start dates, local parameter stability, and probable bootstrap drawdown benefit",Proceed to monitored paper trading
+True out-of-sample evidence,NOT_TESTED,"All robustness analyses reuse historical data and model-development history",Require live paper record before any real-capital decision
+Real-money readiness,NO_GO,"No live operational record, US proxy implementation, Yahoo research data, and no independent out-of-sample evidence",Do not deploy real capital
+Paper-trading readiness,GO_CONDITIONAL,"Frozen logic, corrected accounting, reproducible reports, and 37 passing tests",Begin controlled monthly paper trading with no performance-driven model changes

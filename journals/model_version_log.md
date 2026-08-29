@@ -233,3 +233,28 @@ AlphaCore v1.3b is now the current valid working model. It appears to be a stron
 ### Decision
 
 Freeze v1.3b as the current working model. Do not optimize further until additional validation is completed.
+
+## AlphaCore v1.3b — Robustness Validation Gate
+
+**Date:** 2026-08-29
+
+### Completed validation
+- Common-sample and signal-lag alignment
+- Initial allocation cost accounting
+- Transaction-cost sensitivity at 10, 25, and 50 bps
+- Additional one-month execution-delay stress
+- 9/10/11-month trend-window neighborhood
+- Annual start-date sensitivity from 2006 through 2016
+- 5,000-sample paired 12-month moving-block bootstrap
+- 37 passing unit tests
+
+### Final diagnosis
+The model is robust enough to support the narrow description of a defensive tactical multi-asset allocator. Drawdown control is the most persistent result. Absolute CAGR superiority over 60/40 is not robust across implementation costs, execution delay, later start dates, or bootstrap uncertainty.
+
+### Gate decision
+- Controlled paper trading: conditional GO
+- Historical parameter optimization: NO-GO
+- Individual-stock expansion: NO-GO
+- Real-money deployment: NO-GO
+
+AlphaCore v1.3b remains frozen. The next phase is operational paper-trading validation, not further backtest optimization.

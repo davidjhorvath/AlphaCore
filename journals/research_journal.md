@@ -263,3 +263,17 @@ The bootstrap reuses the same historical observations, assumes the return-genera
 
 ### Decision
 AlphaCore v1.3b passes bootstrap validation only for the narrower claim of probable defensive benefit. It does not demonstrate statistically reliable CAGR or risk-adjusted outperformance over 60/40. Keep the model frozen.
+
+## AlphaCore v1.3b — Final Robustness Gate
+
+**Date:** 2026-08-29
+
+The completed robustness evidence has been consolidated into `reports/backtests/alphacore_v1_robustness_validation.md` and `reports/backtests/alphacore_v1_robustness_scorecard.csv`.
+
+### Final decision
+- Conditional GO for controlled monthly paper trading
+- NO-GO for further historical parameter optimization
+- NO-GO for individual-stock expansion
+- NO-GO for real-money deployment
+
+The approved research claim is limited to a defensive tactical allocation profile with historically stable own returns and materially lower drawdowns. Robust absolute or statistically reliable outperformance over 60/40 has not been demonstrated.
