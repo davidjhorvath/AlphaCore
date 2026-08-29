@@ -197,3 +197,29 @@ The defensive behavior and positive CAGR spread over 60/40 survive both nearby p
 
 ### Decision
 Keep the frozen production trend window at 10 months. Do not optimize or broaden the parameter search in response to the superior 9-month backtest.
+
+## Robustness Validation — Start-Date Sensitivity
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Test whether the full-period conclusion depends on a favorable backtest start date. Evaluate the frozen AlphaCore net return series and the 60/40 benchmark from every calendar-year start between 2006 and 2016, leaving at least approximately ten years in each sample.
+
+Each row uses the same valid months for AlphaCore and 60/40. The samples overlap and should be interpreted as sensitivity checks, not independent trials.
+
+### Results summary
+- AlphaCore CAGR range: 7.83% to 9.12%
+- AlphaCore Sharpe range: 0.710 to 0.925
+- AlphaCore maximum drawdown: -14.91% in every tested start-date sample
+- Positive AlphaCore CAGR spread over 60/40: 3 of 11 start dates
+- Positive AlphaCore Sharpe spread over 60/40: 8 of 11 start dates
+- Better AlphaCore maximum drawdown than 60/40: 11 of 11 start dates
+- Worst CAGR spread versus 60/40: -2.00 percentage points for the 2009 start
+- Best CAGR spread versus 60/40: +0.63 percentage points for the 2007 start
+
+### Interpretation
+AlphaCore's own absolute CAGR and downside behavior are stable across start dates. Its maximum drawdown advantage is universal in this test, and its Sharpe ratio is usually higher than 60/40. However, the claim that AlphaCore beats 60/40 on absolute CAGR depends strongly on including the 2006–2008 crisis period and does not survive most later start dates.
+
+### Decision
+AlphaCore v1.3b passes start-date sensitivity as a defensive allocator but fails it as a robust absolute-CAGR winner over 60/40. Keep the model frozen and retain the narrower defensive positioning claim.

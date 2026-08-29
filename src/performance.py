@@ -559,6 +559,83 @@ def run_trend_window_sensitivity_report(
 
     return summary
 
+
+def start_date_sensitivity_summary(
+    returns: pd.DataFrame,
+    start_years: list[int] | tuple[int, ...],
+    strategy: str = "AlphaCore_net",
+    benchmark: str = "balanced_60_40",
+    risk_free_returns: pd.Series | None = None,
+) -> pd.DataFrame:
+    """Compare a fixed strategy and benchmark across annual start dates."""
+    rows = []
+
+    for start_year in start_years:
+        sample = returns.loc[f"{start_year}-01-01":, [strategy, benchmark]].dropna()
+        if sample.empty:
+            continue
+
+        strategy_returns = sample[strategy]
+        benchmark_returns = sample[benchmark]
+        risk_free_rate = risk_free_returns if risk_free_returns is not None else 0.0
+
+        strategy_cagr = cagr(strategy_returns)
+        benchmark_cagr = cagr(benchmark_returns)
+        strategy_sharpe = sharpe_ratio(strategy_returns, risk_free_rate)
+        benchmark_sharpe = sharpe_ratio(benchmark_returns, risk_free_rate)
+        strategy_drawdown = max_drawdown(strategy_returns)
+        benchmark_drawdown = max_drawdown(benchmark_returns)
+
+        rows.append({
+            "start_year": start_year,
+            "sample_start": sample.index.min().date().isoformat(),
+            "sample_end": sample.index.max().date().isoformat(),
+            "months": len(sample),
+            "AlphaCore_CAGR": strategy_cagr,
+            "balanced_60_40_CAGR": benchmark_cagr,
+            "CAGR_spread": strategy_cagr - benchmark_cagr,
+            "AlphaCore_Sharpe": strategy_sharpe,
+            "balanced_60_40_Sharpe": benchmark_sharpe,
+            "Sharpe_spread": strategy_sharpe - benchmark_sharpe,
+            "AlphaCore_max_drawdown": strategy_drawdown,
+            "balanced_60_40_max_drawdown": benchmark_drawdown,
+            "drawdown_improvement": strategy_drawdown - benchmark_drawdown,
+            "AlphaCore_Calmar": calmar_ratio(strategy_returns),
+            "balanced_60_40_Calmar": calmar_ratio(benchmark_returns),
+        })
+
+    return pd.DataFrame(rows).set_index("start_year")
+
+
+def run_start_date_sensitivity_report(
+    minimum_years: int = 10,
+) -> pd.DataFrame:
+    """Run annual start-date sensitivity with a minimum remaining history."""
+    returns = load_backtest_returns()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+    first_year = returns[["AlphaCore_net", "balanced_60_40"]].dropna().index.min().year
+    final_year = returns.index.max().year
+    latest_start_year = final_year - minimum_years
+    start_years = list(range(first_year, latest_start_year + 1))
+
+    summary = start_date_sensitivity_summary(
+        returns=returns,
+        start_years=start_years,
+        risk_free_returns=risk_free_returns,
+    )
+
+    output_dir = PROJECT_ROOT / "reports" / "backtests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "alphacore_v1_start_date_sensitivity.csv"
+    summary.to_csv(output_path)
+
+    print("Start-date sensitivity report completed successfully.")
+    print(f"Report saved to: {output_path}")
+    print()
+    print(summary.to_string())
+
+    return summary
+
 def subperiod_performance_summary(
     returns: pd.DataFrame,
     periods: dict[str, tuple[str, str]],
@@ -1437,6 +1514,9 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 100 + "\n")
     run_trend_window_sensitivity_report()
+
+    print("\n" + "=" * 100 + "\n")
+    run_start_date_sensitivity_report()
 
     print("\n" + "=" * 100 + "\n")
     run_subperiod_report()
