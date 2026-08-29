@@ -132,6 +132,46 @@ def build_transaction_cost_scenarios(
     return scenarios
 
 
+def build_signal_lag_scenarios(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    signal_lags: tuple[int, ...] | list[int],
+    cost_bps: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build lag scenarios on one common sample with equal cost treatment."""
+    if any(not isinstance(lag, int) or lag < 0 for lag in signal_lags):
+        raise ValueError("Signal lags must be non-negative integers.")
+
+    gross_scenarios = pd.DataFrame(index=weights.index)
+    shifted_weights: dict[int, pd.DataFrame] = {}
+
+    for signal_lag in signal_lags:
+        label = f"AlphaCore_net_lag_{signal_lag}m"
+        gross_scenarios[label] = calculate_strategy_returns(
+            returns=returns,
+            weights=weights,
+            signal_lag=signal_lag,
+        )
+        shifted_weights[signal_lag] = weights.shift(signal_lag)
+
+    common_index = gross_scenarios.dropna().index
+    net_scenarios = pd.DataFrame(index=common_index)
+    turnover_scenarios = pd.DataFrame(index=common_index)
+
+    for signal_lag in signal_lags:
+        label = f"AlphaCore_net_lag_{signal_lag}m"
+        scenario_turnover = calculate_turnover(
+            shifted_weights[signal_lag].loc[common_index]
+        )
+        net_scenarios[label] = (
+            gross_scenarios.loc[common_index, label]
+            - scenario_turnover * (cost_bps / 10000)
+        )
+        turnover_scenarios[label] = scenario_turnover
+
+    return net_scenarios, turnover_scenarios
+
+
 def build_benchmark_returns(returns: pd.DataFrame) -> pd.DataFrame:
     """
     Build simple benchmark return series.

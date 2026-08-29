@@ -146,3 +146,28 @@ The first valid 100% allocation now receives turnover of 50% under the model's e
 
 ### Decision
 This is an accounting correction, not a model change. The economic conclusions of the sample-alignment and transaction-cost validations remain unchanged.
+
+## Robustness Validation — Additional Execution Delay
+
+**Date:** 2026-08-29
+**Model:** AlphaCore v1.3b Corrected Cross-Sectional Ranking
+
+### Objective
+Test whether v1.3b depends excessively on applying monthly portfolio weights at the first permitted return period. Compare the production one-month signal lag with a stressed two-month lag while holding the universe, signals, portfolio rules, and 10 bps transaction cost fixed.
+
+Both scenarios use the same 243-month sample from 2006-03-31 through 2026-05-31. Turnover and initial allocation costs are recalculated independently from the active weights at the common sample start.
+
+### Results
+
+| Signal lag | CAGR | Volatility | Sharpe | Sortino | Max drawdown | CAGR vs 60/40 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 month | 8.44% | 8.23% | 0.822 | 1.351 | -14.91% | +0.33 pp |
+| 2 months | 7.94% | 9.31% | 0.688 | 1.106 | -14.44% | -0.17 pp |
+
+The two-month scenario has 0.751 correlation with the one-month scenario. Average monthly turnover is 22.02% at one month and 21.69% at two months.
+
+### Interpretation
+An additional month of execution delay reduces CAGR by 0.50 percentage points and materially lowers Sharpe, but it does not cause a drawdown failure. The strategy's defensive behavior survives while its small absolute-return advantage over 60/40 disappears. Performance is therefore moderately sensitive to execution timing.
+
+### Decision
+AlphaCore v1.3b passes the delay test as a defensive allocator, but prompt monthly implementation matters for return capture. Do not change the production signal lag in response to this test.

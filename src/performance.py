@@ -4,10 +4,22 @@ import numpy as np
 import pandas as pd
 
 try:
-    from src.backtest import build_transaction_cost_scenarios
+    from src.backtest import (
+        build_benchmark_returns,
+        build_signal_lag_scenarios,
+        build_transaction_cost_scenarios,
+        load_monthly_returns,
+        load_monthly_weights,
+    )
     from src.data_loader import load_risk_free_data
 except ModuleNotFoundError:
-    from backtest import build_transaction_cost_scenarios
+    from backtest import (
+        build_benchmark_returns,
+        build_signal_lag_scenarios,
+        build_transaction_cost_scenarios,
+        load_monthly_returns,
+        load_monthly_weights,
+    )
     from data_loader import load_risk_free_data
 
 
@@ -357,6 +369,55 @@ def run_transaction_cost_sensitivity_report(
     summary.to_csv(output_path)
 
     print("Transaction-cost sensitivity report completed successfully.")
+    print(f"Report saved to: {output_path}")
+    print()
+    print(summary.to_string())
+
+    return summary
+
+
+def run_signal_lag_sensitivity_report(
+    signal_lags: tuple[int, ...] = (1, 2),
+    cost_bps: float = 10,
+) -> pd.DataFrame:
+    """Stress test a one-month additional delay on a common sample."""
+    returns = load_monthly_returns()
+    weights = load_monthly_weights()
+    risk_free_returns = load_risk_free_data()["risk_free_return"]
+
+    scenarios, turnover = build_signal_lag_scenarios(
+        returns=returns,
+        weights=weights,
+        signal_lags=signal_lags,
+        cost_bps=cost_bps,
+    )
+    summary = performance_summary(scenarios, risk_free_returns)
+    summary.insert(0, "signal_lag_months", list(signal_lags))
+    summary.insert(1, "transaction_cost_bps", cost_bps)
+    summary.insert(2, "sample_start", scenarios.index.min().date().isoformat())
+    summary.insert(3, "sample_end", scenarios.index.max().date().isoformat())
+    summary["avg_monthly_turnover"] = [
+        turnover[column].mean() for column in scenarios.columns
+    ]
+
+    baseline_cagr = summary.iloc[0]["CAGR"]
+    common_benchmark_cagr = cagr(
+        build_benchmark_returns(returns)
+        .loc[scenarios.index, "balanced_60_40"]
+    )
+    summary["CAGR_vs_lag_1m"] = summary["CAGR"] - baseline_cagr
+    summary["CAGR_vs_balanced_60_40"] = summary["CAGR"] - common_benchmark_cagr
+    summary["correlation_vs_lag_1m"] = [
+        scenarios[column].corr(scenarios.iloc[:, 0])
+        for column in scenarios.columns
+    ]
+
+    output_dir = PROJECT_ROOT / "reports" / "backtests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "alphacore_v1_signal_lag_sensitivity.csv"
+    summary.to_csv(output_path)
+
+    print("Signal-lag sensitivity report completed successfully.")
     print(f"Report saved to: {output_path}")
     print()
     print(summary.to_string())
@@ -1235,6 +1296,9 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 100 + "\n")
     run_transaction_cost_sensitivity_report()
+
+    print("\n" + "=" * 100 + "\n")
+    run_signal_lag_sensitivity_report()
 
     print("\n" + "=" * 100 + "\n")
     run_subperiod_report()

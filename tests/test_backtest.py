@@ -1,6 +1,7 @@
 import pandas as pd
 
 from src.backtest import (
+    build_signal_lag_scenarios,
     build_transaction_cost_scenarios,
     calculate_strategy_returns,
     calculate_turnover,
@@ -190,3 +191,46 @@ def test_transaction_cost_scenarios_apply_exact_bps_to_same_turnover():
     pd.testing.assert_frame_equal(result, expected)
     assert (result["AlphaCore_net_10bps"] >= result["AlphaCore_net_25bps"]).all()
     assert (result["AlphaCore_net_25bps"] >= result["AlphaCore_net_50bps"]).all()
+
+
+def test_signal_lag_scenarios_use_common_sample_and_equal_initial_cost():
+    dates = pd.date_range("2020-01-31", periods=4, freq="ME")
+    returns = pd.DataFrame(
+        {
+            "SPY": [0.10, 0.20, 0.30, 0.40],
+            "SHY": [0.01, 0.02, 0.03, 0.04],
+        },
+        index=dates,
+    )
+    weights = pd.DataFrame(
+        {
+            "SPY": [1.0, 0.0, 1.0, 0.0],
+            "SHY": [0.0, 1.0, 0.0, 1.0],
+        },
+        index=dates,
+    )
+
+    scenarios, turnover = build_signal_lag_scenarios(
+        returns=returns,
+        weights=weights,
+        signal_lags=(1, 2),
+        cost_bps=10,
+    )
+
+    expected_returns = pd.DataFrame(
+        {
+            "AlphaCore_net_lag_1m": [0.0295, 0.3990],
+            "AlphaCore_net_lag_2m": [0.2995, 0.0390],
+        },
+        index=dates[2:],
+    )
+    expected_turnover = pd.DataFrame(
+        {
+            "AlphaCore_net_lag_1m": [0.5, 1.0],
+            "AlphaCore_net_lag_2m": [0.5, 1.0],
+        },
+        index=dates[2:],
+    )
+
+    pd.testing.assert_frame_equal(scenarios, expected_returns)
+    pd.testing.assert_frame_equal(turnover, expected_turnover)
