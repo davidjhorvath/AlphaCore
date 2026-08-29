@@ -277,3 +277,21 @@ The completed robustness evidence has been consolidated into `reports/backtests/
 - NO-GO for real-money deployment
 
 The approved research claim is limited to a defensive tactical allocation profile with historically stable own returns and materially lower drawdowns. Robust absolute or statistically reliable outperformance over 60/40 has not been demonstrated.
+
+## Paper-Trading Operational Gate
+
+**Date:** 2026-08-29
+
+### Implemented safeguards
+- Monthly price processing excludes the incomplete current calendar month.
+- A paper decision requires prices, signals, and target weights through the last completed month.
+- A paper decision must be generated within seven calendar days after month-end, preventing retrospective live records.
+- Each validated decision is written to its own immutable month directory.
+- The snapshot records model version, regime, signal lag, target weights, turnover, and estimated transaction cost.
+- Duplicate decisions for the same month are rejected.
+
+### Current dry-gate result
+On 2026-08-29 the most recently completed month is 2026-07-31, while local processed prices and target weights end at 2026-05-31. The generator correctly refused to create a paper-trading decision, and no snapshot was written.
+
+### Decision
+Operational scaffolding is ready, but a July 2026 decision would now be retrospective and is therefore ineligible even after a data refresh. The first eligible live snapshot is the August 2026 decision generated during the first seven days of September, after data is refreshed through August and the full feature, signal, and portfolio pipeline completes successfully. Historical validation artifacts must remain distinguishable from subsequent live paper observations.

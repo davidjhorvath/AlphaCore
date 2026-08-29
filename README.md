@@ -6,7 +6,7 @@ The project is not a public SaaS product and not a real-money trading bot. The p
 
 Current working model:
 
-**AlphaCore v1.3 — Strong Risk-On Core-Satellite Portfolio**
+**AlphaCore v1.3b — Corrected Cross-Sectional Ranking**
 
 ---
 
@@ -25,9 +25,9 @@ AlphaCore starts as a paper-traded demo fund with virtual capital. It should not
 
 ---
 
-## 2. Current model: AlphaCore v1.3
+## 2. Current model: AlphaCore v1.3b
 
-AlphaCore v1.3 is a defensive tactical multi-asset allocation model.
+AlphaCore v1.3b is a defensive tactical multi-asset allocation model with corrected cross-sectional signal ranking.
 
 It uses:
 
@@ -152,25 +152,25 @@ Allocation:
 
 ## 6. Current performance summary
 
-AlphaCore v1.3 net results:
+AlphaCore v1.3b net results:
 
-- CAGR: 6.97%
+- CAGR: 8.40%
 
-- Annualized volatility: 7.80%
+- Annualized volatility: 8.21%
 
-- Sharpe ratio: 0.90
+- Risk-free-adjusted Sharpe ratio: 0.818
 
-- Sortino ratio: 1.33
+- Sortino ratio: 1.344
 
-- Max drawdown: -10.81%
+- Max drawdown: -14.91%
 
-- Calmar ratio: 0.64
+- Calmar ratio: 0.564
 
-- Average monthly turnover: 24.39%
+- Average monthly turnover: 21.93%
 
 Main interpretation:
 
-AlphaCore v1.3 has strong drawdown control and smoother compounding, but it still underperforms SPY and 60/40 on absolute CAGR. It is currently best understood as a defensive tactical multi-asset allocator, not a proven alpha engine.
+AlphaCore v1.3b has strong drawdown control and smoother compounding. Its full-period CAGR slightly exceeds 60/40, but robustness tests show that this small advantage is sensitive to costs, execution timing, and start date. It is best understood as a defensive tactical multi-asset allocator, not a proven alpha engine.
 
 ---
 
@@ -200,7 +200,9 @@ AlphaCore v1.3 has strong drawdown control and smoother compounding, but it stil
 
 - Uses Yahoo Finance data, which is acceptable for research MVP but not institutional-grade.
 
-- Risk-free adjusted metrics are not implemented yet.
+- Absolute CAGR superiority over 60/40 is not robust.
+
+- True out-of-sample and live paper-trading evidence are not available yet.
 
 ---
 
@@ -235,6 +237,14 @@ python src/performance.py
 python src/reporting.py
 
 ```
+
+After refreshing all monthly datasets and signals, create the next validated paper-trading decision:
+
+```bash
+python src/paper_trading.py
+```
+
+The command refuses to create a snapshot if inputs do not reach the last completed calendar month, the decision is generated more than seven days after month-end, or a decision already exists for that month.
 
 Generated outputs:
 
@@ -294,7 +304,7 @@ Current working model:
 
 ```text
 
-AlphaCore v1.3 — Strong Risk-On Core-Satellite Portfolio
+AlphaCore v1.3b — Corrected Cross-Sectional Ranking
 
 ```
 
@@ -302,29 +312,21 @@ Current diagnosis:
 
 ```text
 
-Promising defensive tactical allocation prototype.
+Conditional GO for controlled monthly paper trading as a defensive allocator.
 
-Not yet a proven market-beating alpha engine.
+NO-GO for real-money deployment, individual-stock expansion, or further historical parameter optimization.
 
 ```
 
-Next planned research steps:
+Next phase:
 
-- risk-free adjusted metrics,
+- refresh data through the last completed month,
 
-- FRED macro data integration,
+- generate one immutable target-weight decision per month,
 
-- relative metrics versus 60/40 and equal-weight,
+- log data quality, turnover, costs, overrides, and execution deviations,
 
-- stress testing,
-
-- unit tests,
-
-- paper trading log,
-
-- monthly report template,
-
-- later: macro regime layer.
+- complete at least 12 scheduled decisions before the first operational review.
 
 ## 11. Running tests
 
@@ -332,14 +334,18 @@ Run all tests:
 
 ```bash
 python -m pytest
+```
 
 Current test coverage includes:
 
 * feature calculations,
+* risk-free alignment and adjusted metrics,
 * portfolio construction rules,
 * backtest timing logic,
 * turnover calculation,
-* basic look-ahead bias protection.
+* look-ahead and sample-alignment protection,
+* robustness scenario calculations,
+* paper-trading freshness and regime gates.
 
 Current status:
-15 tests passing
+45 tests passing

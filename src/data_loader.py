@@ -207,6 +207,17 @@ def resample_to_monthly(prices: pd.DataFrame) -> pd.DataFrame:
     return prices.resample("ME").last()
 
 
+def drop_incomplete_month(
+    monthly_prices: pd.DataFrame,
+    as_of_date: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Keep only completed calendar months for monthly signal generation."""
+    as_of = pd.Timestamp(as_of_date) if as_of_date is not None else pd.Timestamp.today()
+    current_month = as_of.to_period("M")
+    completed_months = monthly_prices.index.to_period("M") < current_month
+    return monthly_prices.loc[completed_months]
+
+
 def calculate_returns(prices: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate simple percentage returns.
@@ -239,7 +250,7 @@ def build_price_dataset() -> Tuple[pd.DataFrame, pd.DataFrame]:
         end_date=None,
     )
 
-    monthly_prices = resample_to_monthly(daily_prices)
+    monthly_prices = drop_incomplete_month(resample_to_monthly(daily_prices))
     monthly_returns = calculate_returns(monthly_prices)
 
     save_prices(daily_prices, PROJECT_ROOT / "data" / "processed" / "prices_daily.parquet")

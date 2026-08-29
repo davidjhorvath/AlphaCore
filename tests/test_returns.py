@@ -1,10 +1,21 @@
 import pandas as pd
 
+from src.data_loader import drop_incomplete_month
 from src.performance import (
     max_drawdown,
     moving_block_bootstrap_metrics,
     start_date_sensitivity_summary,
 )
+
+
+def test_drop_incomplete_month_keeps_only_completed_calendar_months():
+    dates = pd.date_range("2026-05-31", periods=3, freq="ME")
+    prices = pd.DataFrame({"SPY": [100.0, 101.0, 102.0]}, index=dates)
+
+    result = drop_incomplete_month(prices, as_of_date="2026-07-15")
+
+    expected = prices.loc[[pd.Timestamp("2026-05-31"), pd.Timestamp("2026-06-30")]]
+    pd.testing.assert_frame_equal(result, expected, check_freq=False)
 
 
 def test_max_drawdown_includes_initial_capital_peak():
